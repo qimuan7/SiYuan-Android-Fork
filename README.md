@@ -98,4 +98,3 @@ release 裏有我預先編譯好的 kernel.aar 以及所需的 app.zip (來自�
 ---
 
 願你今日開心 :33.
-剩下的 ui 可以自己寫, 也可以把倉庫裏的 App.java ; BootActivity.java ; JSAndroid.java ; MainActivity.java ; WelcomeActivity.java 作爲參考
