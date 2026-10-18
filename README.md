@@ -8,7 +8,7 @@
 
 ## Release 使用
 
-1. 下載安裝
+1. 下載安裝 https://github.com/qimuan7/SiYuan-Android-Fork/releases/download/3.8.8-fork/siyuan-3.8.8-al4-fork-official-release.apk
 
 2. 初次開啓會有以下畫面, 點擊獲取所有文件訪問權
 > 因爲 SAF 太麻煩, 要改虛擬路徑映射, 所有文件訪問權沒這個問題, 但也只會讀取所選的用戶目錄
