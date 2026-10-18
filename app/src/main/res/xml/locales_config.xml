@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<locale-config xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- 以下 ISO 639 参考：https://www.loc.gov/standards/iso639-2/php/code_list.php -->
+
+    <!--使用英语（美国）作为最终回退语言区域 -->
+    <locale android:name="en-US" />
+
+    <locale android:name="ar" />
+    <locale android:name="de" />
+    <locale android:name="es" />
+    <locale android:name="fr" />
+    <locale android:name="he" />
+    <locale android:name="hi" />
+    <locale android:name="id" />
+    <locale android:name="it" />
+    <locale android:name="ja" />
+    <locale android:name="ko" />
+    <locale android:name="nl" />
+    <locale android:name="pl" />
+    <locale android:name="pt-BR" />
+    <locale android:name="ru" />
+    <locale android:name="sk" />
+    <locale android:name="th" />
+    <locale android:name="tr" />
+    <locale android:name="uk" />
+    <locale android:name="zh-Hans" />
+    <locale android:name="zh-Hant" />
+
+</locale-config>

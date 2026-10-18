@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:padding="32dp"
+    android:background="@color/bg_color">
+
+    <TextView
+        android:id="@+id/tv_title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/welcome_title"
+        android:textSize="36sp"
+        android:textStyle="bold"
+        android:textColor="@color/text_primary_color"
+        android:layout_marginBottom="8dp"/>
+
+    <TextView
+        android:id="@+id/tv_subtitle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/welcome_subtitle"
+        android:textSize="15sp"
+        android:textColor="@color/text_secondary_color"
+        android:layout_marginBottom="64dp"/>
+
+    <!-- 按钮 1 -->
+    <androidx.appcompat.widget.AppCompatButton
+        android:id="@+id/btn_permission"
+        android:layout_width="match_parent"
+        android:layout_height="50dp"
+        android:layout_marginBottom="16dp"
+        android:background="@drawable/btn_outline_minimal"
+        android:stateListAnimator="@null"
+        android:text="@string/btn_grant_permission"
+        android:textAllCaps="false"
+        android:textColor="@color/btn_text_color"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        app:backgroundTint="@null" />
+
+    <!-- 按钮 2 -->
+    <androidx.appcompat.widget.AppCompatButton
+        android:id="@+id/btn_new"
+        android:layout_width="match_parent"
+        android:layout_height="50dp"
+        android:layout_marginBottom="16dp"
+        android:background="@drawable/btn_outline_minimal"
+        android:stateListAnimator="@null"
+        android:text="@string/btn_new_workspace"
+        android:textAllCaps="false"
+        android:textColor="@color/btn_text_color"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        app:backgroundTint="@null" />
+
+    <!-- 按钮 3 -->
+    <androidx.appcompat.widget.AppCompatButton
+        android:id="@+id/btn_open"
+        android:layout_width="match_parent"
+        android:layout_height="50dp"
+        android:background="@drawable/btn_outline_minimal"
+        android:stateListAnimator="@null"
+        android:text="@string/btn_open_workspace"
+        android:textAllCaps="false"
+        android:textColor="@color/btn_text_color"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        app:backgroundTint="@null" />
+
+    <TextView
+        android:id="@+id/tv_status"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textSize="12sp"
+        android:textColor="@color/text_secondary_color"
+        android:layout_marginTop="32dp"/>
+
+</LinearLayout>

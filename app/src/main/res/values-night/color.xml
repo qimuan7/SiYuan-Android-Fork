@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg_color">#000000</color>          <!-- 纯黑背景 -->
+    <color name="text_primary_color">#FFFFFF</color> <!-- 纯白文字 -->
+    <color name="text_secondary_color">#A0A0A0</color>
+
+    <!-- 按钮专用色翻转 -->
+    <color name="btn_bg_color">#000000</color>
+    <color name="btn_border_color">#FFFFFF</color>
+    <color name="btn_text_color">#FFFFFF</color>
+    <color name="btn_pressed_bg">#333333</color>
+</resources>

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="shortcut_shorthand">Flash shorthand</string>
+    <string name="enter_your_text">Enter text and submit. Content will be saved to Settings - Document - Default shorthand save path</string>
+    <string name="submit">Submit</string>
+    <string name="saved">✓</string>
+    <string name="saved_accessibility">Saved</string>
+    <string name="add_to_home">Add to Home</string>
+    <string name="add_to_home_success">Added to home successfully</string>
+    <string name="add_to_home_failed">Failed to add shortcut to home, please make sure you have granted the necessary permissions</string>
+    <string name="paste">Paste</string>
+    <string name="adding_to_home">Adding to home, please wait a second...</string>
+    <string name="permission_request">Permission request</string>
+    <string name="microphone_permission_rationale">Microphone access is required to record audio and insert it into the current document</string>
+    <string name="microphone_permission_denied">Microphone permission was denied</string>
+    <string name="microphone_permission_settings">Microphone permission is disabled. Open app settings to enable it</string>
+    <string name="open_settings">Open settings</string>
+
+    <string name="welcome_title">SiYuan</string>
+    <string name="welcome_subtitle">Choose your workspace freely</string>
+    <string name="btn_grant_permission">Grant File Access</string>
+    <string name="btn_new_workspace">Create New Workspace</string>
+    <string name="btn_open_workspace">Open Existing Workspace</string>
+    <string name="status_permission_granted">✔ All file access granted</string>
+    <string name="status_permission_denied">⚠ Permission not granted. Please tap the button above.</string>
+    <string name="toast_permission_granted">Already granted</string>
+    <string name="toast_cannot_parse_path">Unable to parse path</string>
+    <string name="toast_cannot_write">Cannot write to this directory. Please grant permission first.</string>
+    <string name="toast_create_dir_failed">Failed to create directory: %s</string>
+    <string name="toast_existing_workspace">Workspace exists, will open it directly</string>
+    <string name="toast_not_valid_workspace">Not a valid SiYuan workspace (missing conf/conf.json)</string>
+</resources>

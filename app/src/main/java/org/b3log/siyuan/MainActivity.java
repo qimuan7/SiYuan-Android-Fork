@@ -1,0 +1,1818 @@
+/*
+ * SiYuan - From thought to insight, with agents
+ * Copyright (c) 2020-present, b3log.org
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+package org.b3log.siyuan;
+
+import android.annotation.SuppressLint;
+import android.app.Activity;
+import android.app.AlertDialog;
+import android.app.KeyguardManager;
+import android.content.ClipData;
+import android.content.ContentValues;
+import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.content.res.Configuration;
+import android.graphics.Bitmap;
+import android.graphics.Color;
+import android.hardware.input.InputManager;
+import android.net.Uri;
+import android.os.Build;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.Message;
+import android.os.SystemClock;
+import android.provider.MediaStore;
+import android.provider.Settings;
+import android.util.Log;
+import android.view.ActionMode;
+import android.view.DragEvent;
+import android.view.InputDevice;
+import android.view.MotionEvent;
+import android.view.View;
+import android.view.ViewGroup;
+import android.view.WindowManager;
+import android.webkit.CookieManager;
+import android.webkit.PermissionRequest;
+import android.webkit.RenderProcessGoneDetail;
+import android.webkit.ValueCallback;
+import android.webkit.WebChromeClient;
+import android.webkit.WebResourceError;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
+import android.widget.FrameLayout;
+import android.widget.ImageView;
+import android.widget.ProgressBar;
+import android.widget.TextView;
+import android.window.OnBackInvokedDispatcher;
+
+import android.content.SharedPreferences;
+import android.os.Environment;
+import android.provider.DocumentsContract;
+import android.content.ActivityNotFoundException;
+
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.PickVisualMediaRequest;
+import androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult;
+import androidx.activity.result.contract.ActivityResultContracts.PickMultipleVisualMedia;
+import androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia;
+import androidx.activity.result.contract.ActivityResultContracts.RequestPermission;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
+
+import com.blankj.utilcode.util.AppUtils;
+import com.blankj.utilcode.util.BarUtils;
+import com.blankj.utilcode.util.KeyboardUtils;
+import com.blankj.utilcode.util.StringUtils;
+import com.koushikdutta.async.AsyncServer;
+import com.koushikdutta.async.http.AsyncHttpClient;
+import com.koushikdutta.async.http.AsyncHttpPost;
+import com.koushikdutta.async.http.body.JSONObjectBody;
+import com.koushikdutta.async.http.server.AsyncHttpServer;
+import com.koushikdutta.async.util.Charsets;
+import com.zackratos.ultimatebarx.ultimatebarx.java.UltimateBarX;
+
+import org.apache.commons.io.FileUtils;
+import org.apache.commons.io.IOUtils;
+import org.apache.commons.io.filefilter.DirectoryFileFilter;
+import org.apache.commons.io.filefilter.TrueFileFilter;
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.InputStream;
+import java.lang.reflect.Field;
+import java.net.HttpURLConnection;
+import java.net.InetAddress;
+import java.net.ServerSocket;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.TimeZone;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+import mobile.Mobile;
+
+/**
+ * 主程序.
+ *
+ * @author <a href="https://88250.b3log.org">Liang Ding</a>
+ * @version 1.2.0.4, Aug 3, 2026
+ * @since 1.0.0
+ */
+public class MainActivity extends AppCompatActivity implements com.blankj.utilcode.util.Utils.OnAppStatusChangedListener,
+        InputManager.InputDeviceListener {
+
+    private AsyncHttpServer server;
+    WebView webView;
+    private ImageView bootLogo;
+    private ProgressBar bootProgressBar;
+    private TextView bootDetailsText;
+    private InputManager inputManager;
+    private ActionMode webViewActionMode;
+    private final Map<Integer, String> inputDeviceDetails = new HashMap<>();
+    private long lastHoverMoveLogTime;
+    private volatile boolean appStatusSyncEnabled;
+
+
+    private ValueCallback<Uri[]> uploadMessage;
+    private static final int REQUEST_SELECT_FILE = 100;
+    private static final String PREFS_NAME = "siyuan_prefs";
+    private static final String KEY_WORKSPACE_PATH = "workspace_path";
+    private boolean kernelStarted = false;
+
+
+    private static final int REQUEST_CAMERA = 101;
+    private static final String SIYUAN_IMAGE_PICKER_ACCEPT_TYPE = "application/x-siyuan-image-picker";
+    private static final String SIYUAN_WEBVIEW_SCHEME = "http";
+    private static final String SIYUAN_WEBVIEW_HOST = "127.0.0.1";
+    private static final int SIYUAN_WEBVIEW_PORT = 6806;
+    private static final String SIYUAN_MAIN_PAGE_URL = "https://127.0.0.1:6806/";
+    private static final String SIYUAN_BOOT_PAGE_URL =
+            "https://127.0.0.1:6806/appearance/boot/index.html?v=" + Utils.version;
+    private static final String SIYUAN_BOOT_PROGRESS_URL =
+            "https://127.0.0.1:6806/api/system/bootProgress";
+    private static final long BOOT_PROGRESS_POLL_INTERVAL = 200;
+    private static final long MAIN_PAGE_LOAD_TIMEOUT = 30000;
+    private static final long HOVER_MOVE_LOG_INTERVAL = 250;
+    private PermissionRequest pendingAudioPermissionRequest;
+    private AlertDialog microphonePermissionDialog;
+    private JSAndroid jsAndroid;
+    private final AtomicBoolean bootNavigationCompleted = new AtomicBoolean(false);
+    private final AtomicBoolean mainFrameRecoveryScheduled = new AtomicBoolean(false);
+    private final AtomicBoolean webViewRecoveryInProgress = new AtomicBoolean(false);
+    private volatile boolean kernelBootCompleted;
+    private volatile boolean mainPageReady;
+    private volatile boolean bootProgressMonitorActive;
+    private volatile boolean forceDefaultBootAppearance;
+    private Thread bootProgressMonitorThread;
+    private final Handler mainPageWatchdogHandler = new Handler(Looper.getMainLooper());
+    private final Runnable mainPageWatchdog = this::handleMainPageWatchdog;
+    private final ActivityResultLauncher<PickVisualMediaRequest> selectImageLauncher = registerForActivityResult(
+            new PickVisualMedia(), uri -> completeFileSelection(null == uri ? null : new Uri[]{uri}));
+    private final ActivityResultLauncher<PickVisualMediaRequest> selectImagesLauncher = registerForActivityResult(
+            new PickMultipleVisualMedia(), uris -> completeFileSelection(
+                    uris.isEmpty() ? null : uris.toArray(new Uri[0])));
+    private final ActivityResultLauncher<String> recordAudioPermissionLauncher = registerForActivityResult(
+            new RequestPermission(), this::onRecordAudioPermissionResult);
+    private final ActivityResultLauncher<Intent> saveExportFileLauncher = registerForActivityResult(
+            new StartActivityForResult(), result -> {
+                if (null != jsAndroid) {
+                    jsAndroid.onSaveExportFileResult(result);
+                }
+            });
+
+    private final ActivityResultLauncher<Intent> browseWorkspaceLauncher = registerForActivityResult(
+            new StartActivityForResult(), result -> {
+                if (result.getResultCode() == RESULT_OK && result.getData() != null) {
+                    Uri treeUri = result.getData().getData();
+                    String newPath = getPathFromTreeUri(treeUri);
+                    if (newPath != null && !newPath.isEmpty()) {
+                        String escapedPath = newPath.replace("\\", "\\\\").replace("'", "\\'");
+
+                        // 🔴 如果找得到输入框，就回填；找不到，就弹个提示
+                        String js = "if (window.__activeWsInput) { " +
+                                "window.__activeWsInput.value = '" + escapedPath + "'; " +
+                                "window.__activeWsInput.dispatchEvent(new Event('input', { bubbles: true })); " +
+                                "window.__activeWsInput.dispatchEvent(new Event('change', { bubbles: true })); " +
+                                "window.JSAndroid.showToast('路径已回填'); " +
+                                "} else { " +
+                                "window.JSAndroid.showToast('未找到输入框，请手动粘贴'); " +
+                                "}";
+                        runOnUiThread(() -> webView.evaluateJavascript(js, null));
+                    }
+                }
+            });
+
+    static int serverPort = 6906;
+    static String webViewVer;
+    static String userAgent;
+
+    @Override
+    public void onNewIntent(final Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        Utils.logInfo("boot", "Receive main activity intent, process [" + android.os.Process.myPid()
+                + "], instance [" + System.identityHashCode(this) + "], task [" + getTaskId() + "]");
+
+        if (null == intent || null == webView) {
+            return;
+        }
+
+        try {
+            final String script;
+            if (!StringUtils.isEmpty(intent.getStringExtra("oidcCallback"))) {
+                script = "window.handleOIDCCallback(" + JSONObject.quote(intent.getStringExtra("oidcCallback")) + ");";
+            } else if (!StringUtils.isEmpty(intent.getStringExtra("blockURL"))) {
+                script = "window.openFileByURL(" + JSONObject.quote(intent.getStringExtra("blockURL")) + ");";
+            } else {
+                return;
+            }
+
+            runOnUiThread(() -> webView.evaluateJavascript(script, null));
+
+        } catch (final Exception e) {
+            Utils.logError("intent", "handle payload failed", e);
+        }
+    }
+
+    @Override
+    public void onConfigurationChanged(final Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        Utils.logInfo("boot", "Change main activity configuration, process [" + android.os.Process.myPid()
+                + "], instance [" + System.identityHashCode(this) + "], task [" + getTaskId()
+                + "], configuration [" + Utils.formatInputConfiguration(newConfig) + "]");
+    }
+
+    @Override
+    public void onInputDeviceAdded(final int deviceId) {
+        logInputDevice("Add", deviceId);
+    }
+
+    @Override
+    public void onInputDeviceChanged(final int deviceId) {
+        logInputDevice("Change", deviceId);
+    }
+
+    @Override
+    public void onInputDeviceRemoved(final int deviceId) {
+        final String details = inputDeviceDetails.remove(deviceId);
+        Utils.logInfo("input", "Remove input device, id [" + deviceId + "], details ["
+                + (null == details ? "unavailable" : details) + "]");
+    }
+
+    @Override
+    public void onActionModeStarted(final ActionMode mode) {
+        super.onActionModeStarted(mode);
+        if (null != webView && webView.hasFocus()) {
+            webViewActionMode = mode;
+        }
+    }
+
+    @Override
+    public void onActionModeFinished(final ActionMode mode) {
+        super.onActionModeFinished(mode);
+        if (webViewActionMode == mode) {
+            webViewActionMode = null;
+        }
+    }
+
+    void finishWebViewActionMode() {
+        final ActionMode actionMode = webViewActionMode;
+        webViewActionMode = null;
+        if (null != actionMode) {
+            actionMode.finish();
+        }
+    }
+
+    @Override
+    protected void onCreate(final Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        Utils.logInfo("boot", "Create main activity, process [" + android.os.Process.myPid()
+                + "], instance [" + System.identityHashCode(this) + "], task [" + getTaskId()
+                + "], saved state [" + (null != savedInstanceState) + "]");
+        setContentView(R.layout.activity_main);
+        // 接收 WelcomeActivity 传来的 workspace
+        if (getIntent() != null) {
+            String intentWs = getIntent().getStringExtra("workspace");
+            if (intentWs != null && !intentWs.isEmpty()) {
+                getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().putString(KEY_WORKSPACE_PATH, intentWs).apply();
+            }
+        }
+        registerInputDeviceListener();
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            // Full screen display in landscape mode on Android https://github.com/siyuan-note/siyuan/issues/14448
+            getWindow().getAttributes().layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::goBack);
+        }
+
+        // 启动 HTTP Server
+        startHttpServer();
+
+        // 初始化 UI 元素
+        initUIElements();
+
+        // 初始化外观资源（提前解压，避免内核启动时资源未就绪）
+        initAppearance();
+        if (isFinishing()) {
+            return;
+        }
+
+        // 直接启动内核（WelcomeActivity 已经处理了路径选择）
+        startKernel();
+
+        AppUtils.registerAppStatusChangedListener(this);
+
+        // 使用 Chromium 调试 WebView
+        if (Utils.isDebugPackageAndMode(this)) {
+            this.setWebViewDebuggable(true);
+        }
+
+        // 注册工具栏显示/隐藏跟随软键盘状态
+        // Fix https://github.com/siyuan-note/siyuan/issues/9765
+        Utils.registerSoftKeyboardToolbar(this, webView);
+
+        if (Utils.isTablet(this)) {
+            // 平板上隐藏状态栏 Hide the status bar on tablet https://github.com/siyuan-note/siyuan/issues/12204
+            BarUtils.setStatusBarVisibility(this, false);
+            Utils.setWebViewFocusable(webView, true);
+        } else {
+            // 沉浸式状态栏设置
+            UltimateBarX.statusBarOnly(this).transparent().light(false).color(Color.parseColor("#1e1e1e")).apply();
+            ((ViewGroup) webView.getParent()).setPadding(0, UltimateBarX.getStatusBarHeight(), 0, 0);
+        }
+
+        BarUtils.setNavBarVisibility(this, false);
+
+        // Fix https://github.com/siyuan-note/siyuan/issues/9726
+        AndroidBug5497Workaround.assistActivity(this);
+    }
+
+    // JSAndroid調用, 開啓文件選擇器
+
+    public void openWorkspaceSelector() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+                | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        browseWorkspaceLauncher.launch(intent);
+    }
+
+    // 切換工作區後重啓 Activity
+
+    private void restartApp() {
+        try {
+            Mobile.exit(); // 停止当前 Go 内核
+        } catch (Exception e) {
+            Utils.logError("workspace", "exit kernel failed", e);
+        }
+
+        Intent intent = getIntent();
+        finish();
+        startActivity(intent);
+    }
+
+   // 以下原內容
+
+    private void registerInputDeviceListener() {
+        inputManager = (InputManager) getSystemService(INPUT_SERVICE);
+        if (null == inputManager) {
+            Utils.logInfo("input", "Input manager is unavailable");
+            return;
+        }
+
+        inputManager.registerInputDeviceListener(this, null);
+    }
+
+    private void logInputDevice(final String action, final int deviceId) {
+        if (null == inputManager) {
+            return;
+        }
+
+        final InputDevice device = inputManager.getInputDevice(deviceId);
+        if (null == device) {
+            Utils.logInfo("input", action + " input device, id [" + deviceId + "], details [unavailable]");
+            return;
+        }
+
+        final String details = "sources [0x" + Integer.toHexString(device.getSources()) + "], keyboard type ["
+                + device.getKeyboardType() + "], external [" + device.isExternal() + "], virtual ["
+                + device.isVirtual() + "]";
+        inputDeviceDetails.put(deviceId, details);
+        Utils.logInfo("input", action + " input device, id [" + deviceId + "], details [" + details + "]");
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private void initUIElements() {
+        bootLogo = findViewById(R.id.bootLogo);
+        bootProgressBar = findViewById(R.id.progressBar);
+        bootDetailsText = findViewById(R.id.bootDetails);
+        webView = findViewById(R.id.webView);
+
+        webView.setDownloadListener((url, userAgent, contentDisposition, mimetype, contentLength) -> {
+            final String assetPath = AssetDownload.toAssetPath(url, SIYUAN_MAIN_PAGE_URL);
+            if (null != assetPath) {
+                jsAndroid.saveExportFile(assetPath);
+                return;
+            }
+            final Uri uri = Uri.parse(url);
+            final Intent intent = new Intent(Intent.ACTION_VIEW, uri);
+            startActivity(intent);
+        });
+
+        webView.setOnDragListener((v, event) -> {
+            // 禁用拖拽 https://github.com/siyuan-note/siyuan/issues/6436
+            return DragEvent.ACTION_DRAG_ENDED != event.getAction();
+        });
+
+        webView.setOnHoverListener((v, event) -> {
+            logHoverEvent(event);
+            return false;
+        });
+
+        webView.setOnTouchListener((v, event) -> {
+            // 手指抬起（整个手势结束）时通知前端，用于清除长按多选定时器
+            // 前端的 touchend 在多选/长按分支会被 stopImmediatePropagation 阻断，需由原生补足
+            if (MotionEvent.ACTION_UP == event.getActionMasked()) {
+                webView.evaluateJavascript("javascript:window.dispatchEvent(new Event('nativePhysicalTouchUp'))", null);
+            }
+            return false;   // 不消费事件，保证 WebView 正常滚动/点击
+        });
+
+        final WebSettings ws = webView.getSettings();
+        checkWebViewVer(ws);
+        userAgent = ws.getUserAgentString();
+        Log.i("boot", "User agent [" + userAgent + "]");
+    }
+
+    private void logHoverEvent(final MotionEvent event) {
+        final int action = event.getActionMasked();
+        final long now = SystemClock.uptimeMillis();
+        if (MotionEvent.ACTION_HOVER_MOVE == action && now - lastHoverMoveLogTime < HOVER_MOVE_LOG_INTERVAL) {
+            return;
+        }
+        if (MotionEvent.ACTION_HOVER_MOVE == action) {
+            lastHoverMoveLogTime = now;
+        }
+        if (0 == event.getPointerCount()) {
+            return;
+        }
+        int pointerIndex = event.getActionIndex();
+        if (pointerIndex < 0 || event.getPointerCount() <= pointerIndex) {
+            pointerIndex = 0;
+        }
+        final int toolType = event.getToolType(pointerIndex);
+        Utils.logInfo("input", "Native hover event [action=" + MotionEvent.actionToString(action) + "(" + action
+                + "), tool=" + toolType + ", source=0x" + Integer.toHexString(event.getSource())
+                + ", buttons=0x" + Integer.toHexString(event.getButtonState()) + ", pressure="
+                + event.getPressure(pointerIndex) + ", pointer=" + event.getPointerId(pointerIndex) + ", device="
+                + event.getDeviceId() + ", position=(" + Math.round(event.getX(pointerIndex)) + ","
+                + Math.round(event.getY(pointerIndex)) + ")]");
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private void showBootIndex() {
+        showBootIndex(false);
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private void showBootIndex(final boolean loadMainPageDirectly) {
+        if (null == webView) {
+            return;
+        }
+
+        webView.setVisibility(View.VISIBLE);
+        webView.setWebViewClient(new WebViewClient() {
+
+            @Override
+            public void onReceivedSslError(WebView view, android.webkit.SslErrorHandler handler, android.net.http.SslError error) {
+                // 信任本地自签名证书
+                handler.proceed();
+            }
+
+            @Override
+            public boolean shouldOverrideUrlLoading(final WebView view, final WebResourceRequest request) {
+                final Uri uri = request.getUrl();
+                final String url = uri.toString();
+                if (url.contains("127.0.0.1") && !url.contains("openExternal")) {
+                    view.loadUrl(url);
+                    return true;
+                }
+
+                if (uri.getScheme().toLowerCase().startsWith("http")) {
+                    final Intent i = new Intent(Intent.ACTION_VIEW, uri);
+                    startActivity(i);
+                    return true;
+                }
+                return true;
+            }
+
+            @Override
+            public void onPageStarted(final WebView view, final String url, final Bitmap favicon) {
+                super.onPageStarted(view, url, favicon);
+                if (view != webView) {
+                    return;
+                }
+                if (isMainPageNavigation(url)) {
+                    mainPageReady = false;
+                    bootNavigationCompleted.set(true);
+                    view.getSettings().setMediaPlaybackRequiresUserGesture(true);
+                }
+            }
+
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                if (view != webView) {
+                    return;
+                }
+
+                // 🔴 最终版：地毯式搜索弹窗并注入按钮
+                String injectJs =
+                        "(function() {\n" +
+                                "    if (window.__injectTimer) clearInterval(window.__injectTimer);\n" +
+                                "    function injectBtn() {\n" +
+                                "        // 找所有的 div 容器，范围极广\n" +
+                                "        const allDivs = document.querySelectorAll('div');\n" +
+                                "        allDivs.forEach(div => {\n" +
+                                "            // 如果这个容器已经有按钮了，跳过\n" +
+                                "            if (div.querySelector('#native-browse-btn')) return;\n" +
+                                "            const text = div.innerText || '';\n" +
+                                "            // 必须同时满足：包含“打开”字样，且里面正好有一个 input 输入框\n" +
+                                "            if (text.includes('打开') && div.querySelector('input')) {\n" +
+                                "                const input = div.querySelector('input');\n" +
+                                "                // 防止误伤，确保这是最外层的弹窗容器（高度大于 150px）\n" +
+                                "                if (div.getBoundingClientRect().height < 100) return;\n" +
+                                "\n" +
+                                "                const btn = document.createElement('button');\n" +
+                                "                btn.id = 'native-browse-btn';\n" +
+                                "                btn.innerText = '浏览 (原生)';\n" +
+                                "                btn.style.cssText = 'margin-top: 10px; margin-bottom: 10px; padding: 6px 16px; border-radius: 4px; background: #3b82f6; color: white; border: none; font-size: 14px; cursor: pointer;';\n" +
+                                "                btn.onclick = function(e) {\n" +
+                                "                    e.preventDefault();\n" +
+                                "                    e.stopPropagation();\n" +
+                                "                    window.__activeWsInput = input;\n" +
+                                "                    window.JSAndroid.browseWorkspace();\n" +
+                                "                };\n" +
+                                "\n" +
+                                "                // 将按钮插在输入框的紧后面\n" +
+                                "                if (input.nextSibling) {\n" +
+                                "                    input.parentNode.insertBefore(btn, input.nextSibling);\n" +
+                                "                } else {\n" +
+                                "                    input.parentNode.appendChild(btn);\n" +
+                                "                }\n" +
+                                "            }\n" +
+                                "        });\n" +
+                                "    }\n" +
+                                "    injectBtn();\n" +
+                                "    window.__injectTimer = setInterval(injectBtn, 500);\n" +
+                                "})();";
+                view.evaluateJavascript(injectJs, null);
+
+                // 下面是你原本的代码，保持不动
+                if (null != url && url.contains("/stage/build/")) {
+                    appStatusSyncEnabled = true;
+                }
+                if (isReadyMainPage(url)) {
+                    kernelBootCompleted = true;
+                    mainPageReady = true;
+                    bootNavigationCompleted.set(true);
+                    forceDefaultBootAppearance = false;
+                    stopBootProgressMonitor();
+                    cancelMainPageWatchdog();
+                }
+                runOnUiThread(() -> {
+                    bootLogo.setVisibility(View.GONE);
+                    bootProgressBar.setVisibility(View.GONE);
+                    bootDetailsText.setVisibility(View.GONE);
+                });
+            }
+
+            @Override
+            public void onReceivedError(final WebView view, final WebResourceRequest request,
+                                        final WebResourceError error) {
+                super.onReceivedError(view, request, error);
+                if (request.isForMainFrame()) {
+                    handleMainFrameLoadError(view, request.getUrl().toString(), error.getDescription().toString());
+                }
+            }
+
+            @Override
+            public void onReceivedHttpError(final WebView view, final WebResourceRequest request,
+                                            final WebResourceResponse errorResponse) {
+                super.onReceivedHttpError(view, request, errorResponse);
+                if (request.isForMainFrame()) {
+                    handleMainFrameLoadError(view, request.getUrl().toString(),
+                            "HTTP " + errorResponse.getStatusCode());
+                }
+            }
+
+            @Override
+            public boolean onRenderProcessGone(final WebView view, final RenderProcessGoneDetail detail) {
+                recoverWebView(view, detail.didCrash());
+                return true;
+            }
+
+            @Override
+            public WebResourceResponse shouldInterceptRequest(final WebView view, final WebResourceRequest request) {
+                final Map<String, String> headers = request.getRequestHeaders();
+                final String lowerCaseURL = request.getUrl().toString().toLowerCase();
+                if (lowerCaseURL.contains("youtube")) {
+                    // YouTube 设置 Referer https://github.com/siyuan-note/siyuan/issues/16319
+                    headers.put("Referer", "https://b3log.org/siyuan/");
+                } else if (lowerCaseURL.contains("qpic")) {
+                    // 改进公众号图片加载 https://github.com/siyuan-note/siyuan/issues/16326
+                    return handleRequest(request.getUrl().toString(), headers);
+                }
+                return super.shouldInterceptRequest(view, request);
+            }
+        });
+
+        webView.setWebChromeClient(new WebChromeClient() {
+            private View mCustomView;
+            private WebChromeClient.CustomViewCallback mCustomViewCallback;
+            private int mOriginalSystemUiVisibility;
+
+            @Override
+            public void onShowCustomView(final View view, final WebChromeClient.CustomViewCallback callback) {
+                if (mCustomView != null) {
+                    callback.onCustomViewHidden();
+                    return;
+                }
+
+                mCustomView = view;
+                mOriginalSystemUiVisibility = getWindow().getDecorView().getSystemUiVisibility();
+                mCustomViewCallback = callback;
+
+                final FrameLayout decor = (FrameLayout) getWindow().getDecorView();
+                decor.addView(mCustomView, new FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT));
+                getWindow().getDecorView().setSystemUiVisibility(
+                        View.SYSTEM_UI_FLAG_FULLSCREEN |
+                                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY |
+                                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION);
+            }
+
+            @Override
+            public void onHideCustomView() {
+                final FrameLayout decor = (FrameLayout) getWindow().getDecorView();
+                decor.removeView(mCustomView);
+                mCustomView = null;
+                getWindow().getDecorView().setSystemUiVisibility(mOriginalSystemUiVisibility);
+                mCustomViewCallback.onCustomViewHidden();
+                mCustomViewCallback = null;
+            }
+
+            @Override
+            public boolean onShowFileChooser(final WebView mWebView, final ValueCallback<Uri[]> filePathCallback, final FileChooserParams fileChooserParams) {
+                if (uploadMessage != null) {
+                    uploadMessage.onReceiveValue(null);
+                }
+
+                uploadMessage = filePathCallback;
+
+                if (fileChooserParams.isCaptureEnabled()) {
+                    if (Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q) {
+                        // 不支持 Android 10 以下
+                        Utils.showToast(MainActivity.this, "Capture is not supported on your device (Android 10+ required)");
+                        uploadMessage = null;
+                        return false;
+                    }
+
+                    if (ContextCompat.checkSelfPermission(MainActivity.this, android.Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                        AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.this);
+                        builder.setTitle("权限申请 / Permission Request");
+                        builder.setMessage("需要相机权限以拍摄照片并插入到当前文档中 / Camera permission is required to take photos and insert them into the current document");
+                        builder.setPositiveButton("同意/Agree", (dialog, which) -> {
+                            ActivityCompat.requestPermissions(MainActivity.this, new String[]{android.Manifest.permission.CAMERA}, REQUEST_CAMERA);
+                        });
+                        builder.setNegativeButton("拒绝/Decline", (dialog, which) -> {
+                            Utils.showToast(MainActivity.this, "权限已被拒绝 / Permission denied");
+                            uploadMessage = null;
+                        });
+                        builder.setCancelable(false);
+                        builder.create().show();
+                        return true;
+                    }
+
+                    openCamera();
+                    return true;
+                }
+
+                if (requestsSiyuanImagePicker(fileChooserParams.getAcceptTypes())) {
+                    try {
+                        final PickVisualMediaRequest request = new PickVisualMediaRequest.Builder()
+                                .setMediaType(PickVisualMedia.ImageOnly.INSTANCE)
+                                .build();
+                        if (fileChooserParams.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE) {
+                            selectImagesLauncher.launch(request);
+                        } else {
+                            selectImageLauncher.launch(request);
+                        }
+                        return true;
+                    } catch (final Exception e) {
+                        Utils.logError("file chooser", "open photo picker failed", e);
+                    }
+                }
+
+                final Intent intent = fileChooserParams.createIntent();
+                intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+                try {
+                    startActivityForResult(intent, REQUEST_SELECT_FILE);
+                } catch (final Exception e) {
+                    uploadMessage = null;
+                    Utils.showToast(MainActivity.this, "Cannot open file chooser");
+                    return false;
+                }
+                return true;
+            }
+
+            @Override
+            public void onPermissionRequest(final PermissionRequest request) {
+                runOnUiThread(() -> handleAudioPermissionRequest(request));
+            }
+
+            @Override
+            public void onPermissionRequestCanceled(final PermissionRequest request) {
+                runOnUiThread(() -> cancelAudioPermissionRequest(request));
+            }
+        });
+
+        jsAndroid = new JSAndroid(this);
+        webView.addJavascriptInterface(jsAndroid, "JSAndroid");
+        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
+        final WebSettings ws = webView.getSettings();
+        ws.setJavaScriptEnabled(true);
+        ws.setDomStorageEnabled(true);
+        ws.setCacheMode(WebSettings.LOAD_NO_CACHE);
+        ws.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+        ws.setTextZoom(100);
+        ws.setUseWideViewPort(true);
+        ws.setLoadWithOverviewMode(true);
+        ws.setUserAgentString("SiYuan/" + Utils.version + " https://b3log.org/siyuan Android " + ws.getUserAgentString());
+
+        waitFotKernelHttpServing();
+        if (loadMainPageDirectly) {
+            forceDefaultBootAppearance = false;
+            mainPageReady = false;
+            bootNavigationCompleted.set(true);
+            ws.setMediaPlaybackRequiresUserGesture(true);
+            webView.loadUrl(SIYUAN_MAIN_PAGE_URL);
+            scheduleMainPageWatchdog();
+        } else {
+            loadBootPage();
+            startBootProgressMonitor();
+        }
+
+        keepLive();
+
+        // Start the kernel background service to keep the Go server alive
+        // when the app is backgrounded or the screen is off
+        try {
+            final Intent kernelServiceIntent = new Intent(this, KernelService.class);
+            ContextCompat.startForegroundService(this, kernelServiceIntent);
+        } catch (final Exception e) {
+            Utils.logError("boot", "start kernel service failed", e);
+        }
+    }
+
+    private void loadBootPage() {
+        if (null == webView) {
+            return;
+        }
+        webView.getSettings().setMediaPlaybackRequiresUserGesture(false);
+        mainPageReady = false;
+        bootNavigationCompleted.set(false);
+        final String safeParameter = forceDefaultBootAppearance ? "&appearance=0" : "";
+        webView.loadUrl(SIYUAN_BOOT_PAGE_URL + safeParameter);
+    }
+
+    private synchronized void startBootProgressMonitor() {
+        if (kernelBootCompleted) {
+            runOnUiThread(this::navigateToMainPage);
+            return;
+        }
+        if (null != bootProgressMonitorThread && bootProgressMonitorThread.isAlive()) {
+            return;
+        }
+
+        bootProgressMonitorActive = true;
+        bootProgressMonitorThread = new Thread(() -> {
+            try {
+                while (bootProgressMonitorActive && !isFinishing()) {
+                    if (isKernelBootCompleted()) {
+                        kernelBootCompleted = true;
+                        bootProgressMonitorActive = false;
+                        runOnUiThread(this::navigateToMainPage);
+                        return;
+                    }
+                    try {
+                        Thread.sleep(BOOT_PROGRESS_POLL_INTERVAL);
+                    } catch (final InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                }
+            } finally {
+                synchronized (MainActivity.this) {
+                    if (Thread.currentThread() == bootProgressMonitorThread) {
+                        bootProgressMonitorThread = null;
+                    }
+                }
+            }
+        }, "BootProgressMonitorThread");
+        bootProgressMonitorThread.start();
+    }
+
+    private void stopBootProgressMonitor() {
+        bootProgressMonitorActive = false;
+        final Thread monitorThread = bootProgressMonitorThread;
+        if (null != monitorThread) {
+            monitorThread.interrupt();
+        }
+    }
+
+    private javax.net.ssl.SSLSocketFactory getTrustAllSSLSocketFactory() {
+        try {
+            javax.net.ssl.TrustManager[] trustAllCerts = new javax.net.ssl.TrustManager[]{
+                    new javax.net.ssl.X509TrustManager() {
+                        public java.security.cert.X509Certificate[] getAcceptedIssuers() { return new java.security.cert.X509Certificate[]{}; }
+                        public void checkClientTrusted(java.security.cert.X509Certificate[] certs, String authType) {}
+                        public void checkServerTrusted(java.security.cert.X509Certificate[] certs, String authType) {}
+                    }
+            };
+            javax.net.ssl.SSLContext sc = javax.net.ssl.SSLContext.getInstance("TLS");
+            sc.init(null, trustAllCerts, new java.security.SecureRandom());
+            return sc.getSocketFactory();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private boolean isKernelBootCompleted() {
+        HttpURLConnection connection = null;
+        try {
+            URL url = new URL(SIYUAN_BOOT_PROGRESS_URL);
+            connection = (HttpURLConnection) url.openConnection();
+
+            // 处理 HTTPS 证书信任问题
+            if (connection instanceof javax.net.ssl.HttpsURLConnection) {
+                javax.net.ssl.HttpsURLConnection httpsConn = (javax.net.ssl.HttpsURLConnection) connection;
+                httpsConn.setSSLSocketFactory(getTrustAllSSLSocketFactory());
+                httpsConn.setHostnameVerifier((hostname, session) -> true);
+            }
+
+            connection.setConnectTimeout(1000);
+            connection.setReadTimeout(1000);
+            connection.setUseCaches(false);
+            if (HttpURLConnection.HTTP_OK != connection.getResponseCode()) {
+                return false;
+            }
+            try (InputStream input = connection.getInputStream()) {
+                final JSONObject response = new JSONObject(IOUtils.toString(input, StandardCharsets.UTF_8));
+                final JSONObject data = response.optJSONObject("data");
+                return null != data && 100 <= data.optInt("progress");
+            }
+        } catch (final Exception e) {
+            return false;
+        } finally {
+            if (null != connection) {
+                connection.disconnect();
+            }
+        }
+    }
+
+    private void navigateToMainPage() {
+        if (null == webView || isFinishing()) {
+            return;
+        }
+        scheduleMainPageWatchdog();
+        if (mainPageReady) {
+            bootNavigationCompleted.set(true);
+            cancelMainPageWatchdog();
+            return;
+        }
+        if (!bootNavigationCompleted.compareAndSet(false, true)) {
+            return;
+        }
+
+        forceDefaultBootAppearance = false;
+        mainPageReady = false;
+        webView.getSettings().setMediaPlaybackRequiresUserGesture(true);
+        webView.loadUrl(SIYUAN_MAIN_PAGE_URL);
+    }
+
+    private boolean isMainPageNavigation(final String url) {
+        return null != url && url.startsWith(SIYUAN_MAIN_PAGE_URL)
+                && !url.contains("/appearance/boot/");
+    }
+
+    private boolean isReadyMainPage(final String url) {
+        return null != url && (url.contains("/stage/build/") || url.contains("/check-auth"));
+    }
+
+    private void scheduleMainPageWatchdog() {
+        if (!kernelBootCompleted || isFinishing()) {
+            return;
+        }
+        mainPageWatchdogHandler.removeCallbacks(mainPageWatchdog);
+        mainPageWatchdogHandler.postDelayed(mainPageWatchdog, MAIN_PAGE_LOAD_TIMEOUT);
+    }
+
+    private void cancelMainPageWatchdog() {
+        mainPageWatchdogHandler.removeCallbacks(mainPageWatchdog);
+    }
+
+    private void handleMainPageWatchdog() {
+        if (!kernelBootCompleted || null == webView || isFinishing()) {
+            return;
+        }
+        if (mainPageReady) {
+            return;
+        }
+
+        Utils.logInfo("webview", "Main page load timed out, rebuilding WebView");
+        recoverWebView(webView, false);
+    }
+
+    private void handleMainFrameLoadError(final WebView failedWebView, final String url,
+                                          final String description) {
+        if (failedWebView != webView || isFinishing()) {
+            return;
+        }
+        Utils.logInfo("webview", "Main frame load failed [url=" + url + ", error=" + description + "]");
+        forceDefaultBootAppearance = true;
+        mainPageReady = false;
+        if (!mainFrameRecoveryScheduled.compareAndSet(false, true)) {
+            return;
+        }
+
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            mainFrameRecoveryScheduled.set(false);
+            if (failedWebView != webView || null == webView || isFinishing()) {
+                return;
+            }
+            bootNavigationCompleted.set(false);
+            if (kernelBootCompleted) {
+                navigateToMainPage();
+            } else {
+                loadBootPage();
+                startBootProgressMonitor();
+            }
+        }, 300);
+    }
+
+    private void recoverWebView(final WebView failedWebView, final boolean didCrash) {
+        if (failedWebView != webView || isFinishing()
+                || !webViewRecoveryInProgress.compareAndSet(false, true)) {
+            return;
+        }
+
+        cancelMainPageWatchdog();
+        Utils.logInfo("webview", "Recover WebView [render process crashed=" + didCrash + "]");
+        forceDefaultBootAppearance = !kernelBootCompleted;
+        mainPageReady = false;
+        bootNavigationCompleted.set(false);
+        mainFrameRecoveryScheduled.set(false);
+        try {
+            if (!(failedWebView.getParent() instanceof ViewGroup)) {
+                return;
+            }
+            final ViewGroup parent = (ViewGroup) failedWebView.getParent();
+            final int childIndex = parent.indexOfChild(failedWebView);
+            final ViewGroup.LayoutParams layoutParams = failedWebView.getLayoutParams();
+            parent.removeView(failedWebView);
+            failedWebView.destroy();
+
+            final WebView replacement = new WebView(this);
+            replacement.setId(R.id.webView);
+            parent.addView(replacement, childIndex, layoutParams);
+            webView = replacement;
+            initUIElements();
+            KeyboardUtils.unregisterSoftInputChangedListener(getWindow());
+            Utils.registerSoftKeyboardToolbar(this, webView);
+            if (Utils.isTablet(this)) {
+                Utils.setWebViewFocusable(webView, true);
+            }
+            showBootIndex(kernelBootCompleted);
+        } catch (final Exception e) {
+            Utils.logError("webview", "recover render process failed", e);
+        } finally {
+            webViewRecoveryInProgress.set(false);
+        }
+    }
+
+    void launchSaveExportFile(final Intent intent) {
+        saveExportFileLauncher.launch(intent);
+    }
+
+    private void handleAudioPermissionRequest(final PermissionRequest request) {
+        if (!isTrustedAudioPermissionRequest(request)) {
+            Utils.logInfo("webview", "Deny permission request from origin [" + request.getOrigin() + "]");
+            request.deny();
+            return;
+        }
+        if (null != pendingAudioPermissionRequest) {
+            request.deny();
+            return;
+        }
+        if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO)
+                == PackageManager.PERMISSION_GRANTED) {
+            request.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
+            return;
+        }
+
+        pendingAudioPermissionRequest = request;
+        if (ActivityCompat.shouldShowRequestPermissionRationale(
+                this, android.Manifest.permission.RECORD_AUDIO)) {
+            showMicrophonePermissionRationale();
+        } else {
+            recordAudioPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO);
+        }
+    }
+
+    private boolean isTrustedAudioPermissionRequest(final PermissionRequest request) {
+        final Uri origin = request.getOrigin();
+        final String[] resources = request.getResources();
+        return null != origin
+                && SIYUAN_WEBVIEW_SCHEME.equalsIgnoreCase(origin.getScheme())
+                && SIYUAN_WEBVIEW_HOST.equals(origin.getHost())
+                && SIYUAN_WEBVIEW_PORT == origin.getPort()
+                && null != resources
+                && 1 == resources.length
+                && PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(resources[0]);
+    }
+
+    private void showMicrophonePermissionRationale() {
+        microphonePermissionDialog = new AlertDialog.Builder(this)
+                .setTitle(R.string.permission_request)
+                .setMessage(R.string.microphone_permission_rationale)
+                .setPositiveButton(android.R.string.ok, (dialog, which) -> {
+                    if (null != pendingAudioPermissionRequest) {
+                        recordAudioPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO);
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, (dialog, which) -> denyAudioPermissionRequest(true))
+                .setOnCancelListener(dialog -> denyAudioPermissionRequest(true))
+                .create();
+        microphonePermissionDialog.setOnDismissListener(dialog -> microphonePermissionDialog = null);
+        microphonePermissionDialog.show();
+    }
+
+    private void onRecordAudioPermissionResult(final Boolean granted) {
+        final PermissionRequest request = pendingAudioPermissionRequest;
+        pendingAudioPermissionRequest = null;
+        if (null == request) {
+            return;
+        }
+        if (Boolean.TRUE.equals(granted)) {
+            request.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
+            return;
+        }
+
+        request.deny();
+        if (ActivityCompat.shouldShowRequestPermissionRationale(
+                this, android.Manifest.permission.RECORD_AUDIO)) {
+            Utils.showToast(this, getString(R.string.microphone_permission_denied));
+        } else {
+            showMicrophonePermissionSettings();
+        }
+    }
+
+    private void showMicrophonePermissionSettings() {
+        microphonePermissionDialog = new AlertDialog.Builder(this)
+                .setTitle(R.string.permission_request)
+                .setMessage(R.string.microphone_permission_settings)
+                .setPositiveButton(R.string.open_settings, (dialog, which) -> {
+                    final Intent intent = new Intent(
+                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            Uri.fromParts("package", getPackageName(), null));
+                    startActivity(intent);
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .create();
+        microphonePermissionDialog.setOnDismissListener(dialog -> microphonePermissionDialog = null);
+        microphonePermissionDialog.show();
+    }
+
+    private void denyAudioPermissionRequest(final boolean showMessage) {
+        final PermissionRequest request = pendingAudioPermissionRequest;
+        pendingAudioPermissionRequest = null;
+        if (null != request) {
+            request.deny();
+        }
+        if (showMessage) {
+            Utils.showToast(this, getString(R.string.microphone_permission_denied));
+        }
+    }
+
+    private void cancelAudioPermissionRequest(final PermissionRequest request) {
+        if (pendingAudioPermissionRequest != request) {
+            return;
+        }
+        pendingAudioPermissionRequest = null;
+        if (null != microphonePermissionDialog) {
+            microphonePermissionDialog.dismiss();
+            microphonePermissionDialog = null;
+        }
+    }
+
+    private Handler bootHandler = new Handler(Looper.getMainLooper()) {
+        @Override
+        public void handleMessage(final Message msg) {
+            final String cmd = msg.getData().getString("cmd");
+            if ("startKernel".equals(cmd)) {
+                bootKernel();
+            } else {
+                showBootIndex();
+            }
+        }
+    };
+
+    private void startHttpServer() {
+        if (null != server) {
+            server.stop();
+        }
+
+        try {
+            // 解决乱码问题 https://github.com/koush/AndroidAsync/issues/656#issuecomment-523325452
+            final Class<Charsets> charsetClass = Charsets.class;
+            Field usAscii = charsetClass.getDeclaredField("US_ASCII");
+            usAscii.setAccessible(true);
+            usAscii.set(Charsets.class, Charsets.UTF_8);
+        } catch (final Exception e) {
+            Utils.logError("http", "init charset failed", e);
+        }
+
+        server = new AsyncHttpServer();
+        server.post("/api/walkDir", (request, response) -> {
+            try {
+                final long start = System.currentTimeMillis();
+                final JSONObject requestJSON = (JSONObject) request.getBody().get();
+                final String dir = requestJSON.optString("dir");
+                final JSONObject data = new JSONObject();
+                final JSONArray files = new JSONArray();
+                FileUtils.listFilesAndDirs(new File(dir), TrueFileFilter.INSTANCE, DirectoryFileFilter.DIRECTORY).forEach(file -> {
+                    final String path = file.getAbsolutePath();
+                    final JSONObject info = new JSONObject();
+                    try {
+                        info.put("path", path);
+                        info.put("name", file.getName());
+                        info.put("size", file.length());
+                        info.put("updated", file.lastModified());
+                        info.put("isDir", file.isDirectory());
+                    } catch (final Exception e) {
+                        Utils.logError("http", "walk dir failed", e);
+                    }
+                    files.put(info);
+                });
+                data.put("files", files);
+                final JSONObject responseJSON = new JSONObject().put("code", 0).put("msg", "").put("data", data);
+                response.send(responseJSON);
+                Utils.logInfo("http", "Walk dir [" + dir + "] in [" + (System.currentTimeMillis() - start) + "] ms");
+            } catch (final Exception e) {
+                Utils.logError("http", "walk dir failed", e);
+                try {
+                    response.send(new JSONObject().put("code", -1).put("msg", e.getMessage()));
+                } catch (final Exception e2) {
+                    Utils.logError("http", "walk dir failed", e2);
+                }
+            }
+        });
+
+        serverPort = getAvailablePort();
+        final AsyncServer s = AsyncServer.getDefault();
+        if (Utils.isDebugPackageAndMode(this)) {
+            // 开发环境绑定所有网卡以便调试
+            s.listen(null, serverPort, server.getListenCallback());
+        } else {
+            // 生产环境绑定 ipv6 回环地址 [::1] 以防止被远程访问
+            s.listen(InetAddress.getLoopbackAddress(), serverPort, server.getListenCallback());
+        }
+        Utils.logInfo("http", "HTTP server is listening on port [" + serverPort + "]");
+    }
+
+    private int getAvailablePort() {
+        int ret = 6906;
+        try {
+            ServerSocket s = new ServerSocket(0);
+            ret = s.getLocalPort();
+            s.close();
+        } catch (final Exception e) {
+            Utils.logError("http", "get available port failed", e);
+        }
+        return ret;
+    }
+
+    private void bootKernel() {
+        Mobile.setHttpServerPort(MainActivity.serverPort);
+        if (Mobile.isHttpServing()) {
+            Log.i("kernel", "Kernel HTTP server is running");
+            bootIndex();
+            return;
+        }
+
+        try {
+            new Thread(() -> {
+                final String channel = Utils.getChannel(this.getPackageManager());
+                if ("cn".equals(channel) || "huawei".equals(channel)) {
+                    Mobile.disableFeature("ai");
+                }
+
+                final String appDir = getFilesDir().getAbsolutePath() + "/app";
+                String workspaceBaseDir;
+                SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+                String customPath = prefs.getString(KEY_WORKSPACE_PATH, null);
+                if (customPath != null && !customPath.isEmpty()) {
+                    workspaceBaseDir = customPath;
+                } else {
+                    workspaceBaseDir = getExternalFilesDir(null).getAbsolutePath();
+                }
+                final String timezone = TimeZone.getDefault().getID();
+                final String localIPs = Utils.getLANIPAddressList(this);
+                final String langCode = Utils.getLanguage();
+                Mobile.startKernel("android", appDir, workspaceBaseDir, timezone, localIPs, langCode,
+                        Build.VERSION.RELEASE +
+                                "/SDK " + Build.VERSION.SDK_INT +
+                                "/WebView " + webViewVer +
+                                "/Manufacturer " + android.os.Build.MANUFACTURER +
+                                "/Brand " + android.os.Build.BRAND +
+                                "/UA " + userAgent);
+            }).start();
+        } catch (final Exception e) {
+            Utils.logError("kernel", "boot kernel failed", e);
+            return;
+        }
+
+        bootIndex();
+    }
+
+    private WebResourceResponse handleRequest(String urlString, Map<String, String> headers) {
+        try {
+            final URL url = new URL(urlString);
+            final HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+
+            for (Map.Entry<String, String> entry : headers.entrySet()) {
+                if ("referer".equalsIgnoreCase(entry.getKey())) {
+                    continue;
+                }
+                connection.setRequestProperty(entry.getKey(), entry.getValue());
+            }
+            connection.setRequestProperty("User-Agent", userAgent);
+
+            final String contentType = connection.getContentType();
+            final String mimeType = (contentType != null && contentType.contains(";")) ? contentType.split(";")[0] : contentType;
+            final String encoding = (contentType != null && contentType.contains("charset=")) ? contentType.split("charset=")[1] : "UTF-8";
+            final InputStream is = connection.getInputStream();
+            return new WebResourceResponse(mimeType, encoding, is);
+
+        } catch (final Exception e) {
+            Utils.logError("webview", "handle request failed for url [" + urlString + "]", e);
+            return null; // 返回空后 WebView 会尝试自己加载原始 URL
+        }
+    }
+
+    /**
+     * 通知栏保活。
+     */
+    private void keepLive() {
+        if (!KeepLiveService.isKeepLiveEnabled()) {
+            Utils.logInfo("keeplive", "Keep live service is disabled");
+            return;
+        }
+
+        Utils.logInfo("keeplive", "Keep live service is enabled");
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS)
+                    != PackageManager.PERMISSION_GRANTED) {
+                return;
+            }
+        }
+
+        try {
+            final Intent intent = new Intent(this, KeepLiveService.class);
+            ContextCompat.startForegroundService(this, intent);
+        } catch (final Exception e) {
+            Utils.logError("keeplive", "start keep live service failed", e);
+        }
+    }
+
+
+    private String getPathFromTreeUri(Uri treeUri) {
+        if (treeUri == null) {
+            return null;
+        }
+        try {
+            String documentId = DocumentsContract.getTreeDocumentId(treeUri);
+            String[] split = documentId.split(":", 2);
+            String type = split[0];
+            String path = split.length > 1 ? split[1] : "";
+            if ("primary".equalsIgnoreCase(type)) {
+                if (path.isEmpty()) {
+                    return Environment.getExternalStorageDirectory().getAbsolutePath();
+                }
+                return Environment.getExternalStorageDirectory() + "/" + path;
+            } else {
+                if (path.isEmpty()) {
+                    return "/storage/" + type;
+                }
+                return "/storage/" + type + "/" + path;
+            }
+        } catch (Exception e) {
+            Utils.logError("workspace", "get path from tree uri failed", e);
+            return null;
+        }
+    }
+
+
+    private void startKernel() {
+        if (kernelStarted) {
+            return;
+        }
+        kernelStarted = true;
+        final Bundle b = new Bundle();
+        b.putString("cmd", "startKernel");
+        final Message msg = new Message();
+        msg.setData(b);
+        bootHandler.sendMessage(msg);
+    }
+
+    private void bootIndex() {
+        final Bundle b = new Bundle();
+        b.putString("cmd", "bootIndex");
+        final Message msg = new Message();
+        msg.setData(b);
+        bootHandler.sendMessage(msg);
+    }
+
+    /**
+     * 等待内核 HTTP 服务伺服。
+     */
+    private void waitFotKernelHttpServing() {
+        while (true) {
+            sleep(10);
+            if (Mobile.isHttpServing()) {
+                break;
+            }
+        }
+    }
+
+    private void initAppearance() {
+        if (needUnzipAssets()) {
+            final String appDir = getFilesDir().getAbsolutePath() + "/app";
+            final File appVerFile = new File(appDir, "VERSION");
+
+            setBootProgress("Clearing appearance...", 20);
+            try {
+                FileUtils.deleteDirectory(new File(appDir));
+            } catch (final Exception e) {
+                Utils.logError("boot", "delete dir [" + appDir + "] failed, exit application", e);
+                exit();
+                return;
+            }
+
+            setBootProgress("Initializing appearance...", 60);
+
+            try {
+                final String appZip = getCacheDir() + "/app.zip";
+                IOUtils.copy(getAssets().open("app.zip"), FileUtils.openOutputStream(new File(appZip)));
+                Utils.unzipAsset(appZip, appDir + "/app");
+            } catch (final Exception e) {
+                Utils.logError("boot", "unzip assets failed, exit application", e);
+                exit();
+                return;
+            }
+
+            try {
+                FileUtils.writeStringToFile(appVerFile, Utils.versionCode + "", StandardCharsets.UTF_8);
+            } catch (final Exception e) {
+                Utils.logError("boot", "write version failed", e);
+            }
+
+            setBootProgress("Booting kernel...", 80);
+        }
+    }
+
+    private void setBootProgress(final String text, final int progressPercent) {
+        runOnUiThread(() -> {
+            bootDetailsText.setText(text);
+            bootProgressBar.setProgress(progressPercent);
+        });
+    }
+
+    private void sleep(final long time) {
+        try {
+            Thread.sleep(time);
+        } catch (final Exception e) {
+            Utils.logError("runtime", "sleep failed", e);
+        }
+    }
+
+    @Override
+    public void onBackPressed() {
+        goBack();
+    }
+
+    private void goBack() {
+        webView.evaluateJavascript("javascript:window.goBack ? window.goBack() : window.history.back()", null);
+    }
+
+    // 用于保存拍照图片的 uri
+    private Uri mCameraUri;
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        if (requestCode == REQUEST_CAMERA) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                openCamera();
+                return;
+            }
+
+            Utils.showToast(this, "权限已被拒绝 / Permission denied");
+        }
+
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+    }
+
+    private void openCamera() {
+        final Intent captureIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+        if (captureIntent.resolveActivity(getPackageManager()) != null) {
+            final Uri photoUri = getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, new ContentValues());
+            mCameraUri = photoUri;
+            if (photoUri != null) {
+                captureIntent.putExtra(MediaStore.EXTRA_OUTPUT, photoUri);
+                captureIntent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+                startActivityForResult(captureIntent, REQUEST_CAMERA);
+            }
+        }
+    }
+
+    private static boolean requestsSiyuanImagePicker(final String[] acceptTypes) {
+        if (null == acceptTypes || 0 == acceptTypes.length) {
+            return false;
+        }
+
+        boolean acceptsImages = false;
+        boolean requestsImagePicker = false;
+        for (final String acceptTypeGroup : acceptTypes) {
+            if (null == acceptTypeGroup) {
+                continue;
+            }
+            for (final String acceptType : acceptTypeGroup.split(",")) {
+                final String normalizedType = acceptType.trim();
+                if (normalizedType.isEmpty()) {
+                    continue;
+                }
+                if ("image/*".equalsIgnoreCase(normalizedType)) {
+                    acceptsImages = true;
+                } else if (SIYUAN_IMAGE_PICKER_ACCEPT_TYPE.equalsIgnoreCase(normalizedType)) {
+                    requestsImagePicker = true;
+                } else {
+                    return false;
+                }
+            }
+        }
+        return acceptsImages && requestsImagePicker;
+    }
+
+    private void completeFileSelection(final Uri[] uris) {
+        if (null == uploadMessage) {
+            return;
+        }
+        final ValueCallback<Uri[]> callback = uploadMessage;
+        uploadMessage = null;
+        callback.onReceiveValue(uris);
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent intent) {
+        if (REQUEST_CAMERA != requestCode && REQUEST_SELECT_FILE != requestCode) {
+            super.onActivityResult(requestCode, resultCode, intent);
+            return;
+        }
+
+        if (null == uploadMessage) {
+            super.onActivityResult(requestCode, resultCode, intent);
+            return;
+        }
+
+        if (requestCode == REQUEST_CAMERA) {
+            if (RESULT_OK != resultCode) {
+                uploadMessage.onReceiveValue(null);
+                uploadMessage = null;
+                return;
+            }
+
+            uploadMessage.onReceiveValue(new Uri[]{mCameraUri});
+        } else if (requestCode == REQUEST_SELECT_FILE) {
+            // 以下代码参考自 https://github.com/mgks/os-fileup/blob/master/app/src/main/java/mgks/os/fileup/MainActivity.java MIT license
+
+            Uri[] results = null;
+            ClipData clipData;
+            String stringData;
+            try {
+                clipData = intent.getClipData();
+                stringData = intent.getDataString();
+            } catch (Exception e) {
+                clipData = null;
+                stringData = null;
+            }
+
+            if (clipData != null) {
+                final int numSelectedFiles = clipData.getItemCount();
+                results = new Uri[numSelectedFiles];
+                for (int i = 0; i < clipData.getItemCount(); i++) {
+                    results[i] = clipData.getItemAt(i).getUri();
+                }
+            } else {
+                try {
+                    Bitmap cam_photo = (Bitmap) intent.getExtras().get("data");
+                    ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+                    cam_photo.compress(Bitmap.CompressFormat.JPEG, 100, bytes);
+                    stringData = MediaStore.Images.Media.insertImage(this.getContentResolver(), cam_photo, null, null);
+                } catch (Exception ignored) {
+                }
+
+                if (!StringUtils.isEmpty(stringData)) {
+                    results = new Uri[]{Uri.parse(stringData)};
+                }
+            }
+
+            uploadMessage.onReceiveValue(results);
+        }
+
+        uploadMessage = null;
+        super.onActivityResult(requestCode, resultCode, intent);
+    }
+
+    private boolean needUnzipAssets() {
+        final String appDir = getFilesDir().getAbsolutePath() + "/app";
+        final File appDirFile = new File(appDir);
+        appDirFile.mkdirs();
+
+        if (Utils.isDebugPackageAndMode(this)) {
+            Log.i("boot", "Always unzip assets in debug mode");
+            return true;
+        }
+
+        final File appVerFile = new File(appDir, "VERSION");
+        if (!appVerFile.exists()) {
+            return true;
+        }
+
+        boolean ret = true;
+        try {
+            String ver = FileUtils.readFileToString(appVerFile, StandardCharsets.UTF_8);
+            if (StringUtils.isEmpty(ver)) {
+                return true;
+            }
+            ver = ver.trim();
+            try {
+                return Integer.parseInt(ver) != Utils.versionCode;
+            } catch (final NumberFormatException e) {
+                return true;
+            }
+        } catch (final Exception e) {
+            Utils.logError("boot", "check version failed", e);
+        }
+        return ret;
+    }
+
+    @Override
+    protected void onDestroy() {
+        Utils.logInfo("boot", "Destroy main activity, process [" + android.os.Process.myPid()
+                + "], instance [" + System.identityHashCode(this) + "], task [" + getTaskId()
+                + "], finishing [" + isFinishing() + "], task root [" + isTaskRoot()
+                + "], changing configurations [" + isChangingConfigurations() + "], changes [0x"
+                + Integer.toHexString(getChangingConfigurations()) + "]");
+        if (null != pendingAudioPermissionRequest) {
+            pendingAudioPermissionRequest.deny();
+            pendingAudioPermissionRequest = null;
+        }
+        if (null != microphonePermissionDialog) {
+            microphonePermissionDialog.dismiss();
+            microphonePermissionDialog = null;
+        }
+        super.onDestroy();
+        exit();
+    }
+
+    @Override
+    public void onForeground(Activity activity) {
+        startSyncDataIfReady();
+        if (null != webView) {
+            webView.evaluateJavascript("javascript:window.reconnectWebSocket()", null);
+        }
+    }
+
+    @Override
+    public void onBackground(Activity activity) {
+        startSyncDataIfReady();
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (webView != null) {
+            Utils.onKeyboardWindowFocusChanged(this, webView, hasFocus);
+        }
+    }
+
+    private void startSyncDataIfReady() {
+        if (!appStatusSyncEnabled) {
+            return;
+        }
+        startSyncData();
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        if (webView != null) {
+            final KeyguardManager keyguardManager = (KeyguardManager) getSystemService(KEYGUARD_SERVICE);
+            if (keyguardManager != null && keyguardManager.isKeyguardLocked()) {
+                webView.evaluateJavascript("javascript:window.lockscreenByMode && window.lockscreenByMode()", null);
+            }
+        }
+    }
+
+    @Override
+    public void onMultiWindowModeChanged(boolean isInMultiWindowMode) {
+        super.onMultiWindowModeChanged(isInMultiWindowMode);
+    }
+
+    public void exit() {
+        Utils.logInfo("runtime", "Exit main activity, process [" + android.os.Process.myPid()
+                + "], instance [" + System.identityHashCode(this) + "], task [" + getTaskId() + "]");
+        release();
+
+        finishAffinity();
+        finishAndRemoveTask();
+
+        try {
+            Mobile.exit();
+        } catch (Exception e) {
+            Utils.logError("runtime", "exit kernel failed", e);
+        }
+    }
+
+    private void release() {
+        cancelMainPageWatchdog();
+        stopBootProgressMonitor();
+        if (null != bootProgressMonitorThread) {
+            bootProgressMonitorThread = null;
+        }
+
+        try {
+            if (null != inputManager) {
+                inputManager.unregisterInputDeviceListener(this);
+                inputManager = null;
+            }
+        } catch (final Exception e) {
+            Utils.logError("runtime", "unregister input device listener failed", e);
+        }
+
+        try {
+            KeyboardUtils.unregisterSoftInputChangedListener(getWindow());
+        } catch (final Exception e) {
+            Utils.logError("runtime", "unregister keyboard listener failed", e);
+        }
+
+        try {
+            AppUtils.unregisterAppStatusChangedListener(this);
+        } catch (final Exception e) {
+            Utils.logError("runtime", "unregister app status listener failed", e);
+        }
+
+        try {
+            // The "Remember me" function on the auth page is invalid on the mobile https://github.com/siyuan-note/siyuan/issues/15216
+            CookieManager.getInstance().removeSessionCookies(null);
+        } catch (final Exception e) {
+            Utils.logError("runtime", "clear cookies failed", e);
+        }
+
+        try {
+            if (null != webView) {
+                runOnUiThread(() -> {
+                    ((ViewGroup) webView.getParent()).removeView(webView);
+                    webView.removeAllViews();
+                    webView.destroy();
+                    webView = null;
+                });
+            }
+        } catch (final Exception e) {
+            Utils.logError("runtime", "destroy webview failed", e);
+        }
+
+        try {
+            if (null != server) {
+                server.stop();
+                server = null;
+            }
+        } catch (final Exception e) {
+            Utils.logError("runtime", "stop http server failed", e);
+        }
+
+        try {
+            stopService(new Intent(this, KeepLiveService.class));
+        } catch (final Exception e) {
+            Utils.logError("runtime", "stop keep live service failed", e);
+        }
+
+        try {
+            final Intent kernelServiceIntent = new Intent(this, KernelService.class);
+            stopService(kernelServiceIntent);
+        } catch (final Exception e) {
+            Utils.logError("runtime", "stop kernel service failed", e);
+        }
+    }
+
+    private void checkWebViewVer(final WebSettings ws) {
+        // Android check WebView version 95+ https://github.com/siyuan-note/siyuan/issues/15147
+        final String ua = ws.getUserAgentString();
+        if (ua.contains("Chrome/")) {
+            final int minVer = 95;
+            try {
+                final String chromeVersion = ua.split("Chrome/")[1].split(" ")[0];
+                if (chromeVersion.contains(".")) {
+                    final String[] chromeVersionParts = chromeVersion.split("\\.");
+                    webViewVer = chromeVersionParts[0];
+                    if (Integer.parseInt(webViewVer) < minVer) {
+                        Utils.showToast(this, "WebView version [" + webViewVer + "] is too low, please upgrade to [" + minVer + "] or higher");
+                    }
+                }
+            } catch (final Exception e) {
+                Utils.logError("boot", "check WebView version failed", e);
+                Utils.showToast(this, "Check WebView version failed: " + e.getMessage());
+            }
+        }
+    }
+
+    public void setWebViewDebuggable(final boolean debuggable) {
+        WebView.setWebContentsDebuggingEnabled(debuggable);
+    }
+
+    private static final AtomicBoolean syncing = new AtomicBoolean(false);
+
+    public static void startSyncData() {
+        if (!syncing.compareAndSet(false, true)) {
+            Log.i("sync", "Data is syncing...");
+            return;
+        }
+
+        try {
+            new Thread(MainActivity::syncData, "SyncData").start();
+        } catch (final Throwable e) {
+            syncing.set(false);
+            Utils.logError("sync", "data sync failed", e);
+        }
+    }
+
+
+    private static void initAsyncHttpClientSSL() {
+        try {
+            javax.net.ssl.TrustManager[] trustAllCerts = new javax.net.ssl.TrustManager[]{
+                    new javax.net.ssl.X509TrustManager() {
+                        public java.security.cert.X509Certificate[] getAcceptedIssuers() { return new java.security.cert.X509Certificate[]{}; }
+                        public void checkClientTrusted(java.security.cert.X509Certificate[] certs, String authType) {}
+                        public void checkServerTrusted(java.security.cert.X509Certificate[] certs, String authType) {}
+                    }
+            };
+            javax.net.ssl.SSLContext sc = javax.net.ssl.SSLContext.getInstance("TLS");
+            sc.init(null, trustAllCerts, new java.security.SecureRandom());
+            com.koushikdutta.async.http.AsyncHttpClient.getDefaultInstance().getSSLSocketMiddleware().setSSLContext(sc);
+            com.koushikdutta.async.http.AsyncHttpClient.getDefaultInstance().getSSLSocketMiddleware().setHostnameVerifier((hostname, session) -> true);
+        } catch (Exception e) {
+            Utils.logError("sync", "init ssl failed", e);
+        }
+    }
+
+
+    private static void syncData() {
+        initAsyncHttpClientSSL();
+        try {
+            final AsyncHttpPost req = new com.koushikdutta.async.http.AsyncHttpPost("https://127.0.0.1:6806/api/sync/performSync");
+            req.setBody(new JSONObjectBody(new JSONObject().put("mobileSwitch", true)));
+            AsyncHttpClient.getDefaultInstance().executeJSONObject(req,
+                    new com.koushikdutta.async.http.AsyncHttpClient.JSONObjectCallback() {
+                        @Override
+                        public void onCompleted(Exception e, com.koushikdutta.async.http.AsyncHttpResponse source, JSONObject result) {
+                            try {
+                                if (null != e) {
+                                    Utils.logError("sync", "data sync failed", e);
+                                }
+                            } finally {
+                                syncing.set(false);
+                            }
+                        }
+                    });
+        } catch (final Throwable e) {
+            syncing.set(false);
+            Utils.logError("sync", "data sync failed", e);
+        }
+    }
+}

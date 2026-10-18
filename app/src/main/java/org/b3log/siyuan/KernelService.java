@@ -1,0 +1,328 @@
+/*
+ * SiYuan - From thought to insight, with agents
+ * Copyright (c) 2020-present, b3log.org
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+package org.b3log.siyuan;
+
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.app.Service;
+import android.content.Context;
+import android.content.Intent;
+import android.content.pm.ServiceInfo;
+import android.net.ConnectivityManager;
+import android.net.LinkProperties;
+import android.net.Network;
+import android.net.NetworkRequest;
+import android.net.wifi.WifiManager;
+import android.os.Build;
+import android.os.Handler;
+import android.os.IBinder;
+import android.os.Looper;
+import android.os.PowerManager;
+
+import androidx.core.app.NotificationCompat;
+import androidx.core.app.ServiceCompat;
+
+import mobile.Mobile;
+
+/**
+ * 内核常驻服务.
+ *
+ * <p>
+ * Keeps the Go kernel HTTP server alive when the app is in the background
+ * or the screen is off by holding a partial WakeLock and a WifiLock,
+ * running as a foreground service with a minimal silent notification.
+ * </p>
+ *
+ * @author <a href="https://88250.b3log.org">Liang Ding</a>
+ * @author <a href="https://github.com/fayaz-modz">Fayaz Mohammad</a>
+ * @version 1.0.0.1, Jul 3, 2026
+ * @since 3.1.0
+ */
+public class KernelService extends Service {
+
+    private static final String CHANNEL_ID = "siyuan_kernel_channel";
+    private static final int NOTIFICATION_ID = 19860;
+
+    private PowerManager.WakeLock wakeLock;
+    private WifiManager.WifiLock wifiLock;
+    private WifiManager.MulticastLock multicastLock;
+    private ConnectivityManager connectivityManager;
+    private ConnectivityManager.NetworkCallback networkCallback;
+    private String localIPs = "";
+    private final Handler multicastHandler = new Handler(Looper.getMainLooper());
+    private final Runnable refreshMulticastLock = new Runnable() {
+        @Override
+        public void run() {
+            updateMulticastLock();
+            updateLocalIPs();
+            multicastHandler.postDelayed(this, 5000);
+        }
+    };
+    private final Runnable refreshLocalIPs = new Runnable() {
+        @Override
+        public void run() {
+            updateLocalIPs();
+        }
+    };
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        createNotificationChannel();
+        // 从 Android 14 (API 34) 起必须显式传入前台服务类型，否则 startForeground
+        // 会以未定义类型去校验权限并抛出 SecurityException。
+        // specialUse 类型需在 manifest 声明 FOREGROUND_SERVICE_SPECIAL_USE 权限。
+        final int foregroundServiceType;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            foregroundServiceType = ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE;
+        } else {
+            foregroundServiceType = 0;
+        }
+        ServiceCompat.startForeground(
+                this, NOTIFICATION_ID, buildNotification(), foregroundServiceType);
+        acquireLocks();
+        multicastHandler.post(refreshMulticastLock);
+        registerNetworkCallback();
+    }
+
+    @Override
+    public int onStartCommand(Intent intent, int flags, int startId) {
+        // If the system kills this service, restart it automatically
+        return START_STICKY;
+    }
+
+    @Override
+    public IBinder onBind(Intent intent) {
+        return null;
+    }
+
+    @Override
+    public void onDestroy() {
+        unregisterNetworkCallback();
+        multicastHandler.removeCallbacks(refreshMulticastLock);
+        multicastHandler.removeCallbacks(refreshLocalIPs);
+        releaseLocks();
+        super.onDestroy();
+    }
+
+    /**
+     * Create a low-importance notification channel so the notification is
+     * silent, has no badge, and is minimally visible.
+     */
+    private void createNotificationChannel() {
+        final NotificationChannel channel = new NotificationChannel(
+                CHANNEL_ID,
+                "Kernel Service",
+                NotificationManager.IMPORTANCE_MIN   // lowest: no sound, no peek, collapsed in shade
+        );
+        channel.setDescription("Keeps the SiYuan kernel running in the background");
+        channel.setShowBadge(false);
+        channel.setLockscreenVisibility(Notification.VISIBILITY_SECRET);
+        channel.enableLights(false);
+        channel.enableVibration(false);
+        channel.setSound(null, null);
+
+        final NotificationManager manager =
+                (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        if (manager != null) {
+            manager.createNotificationChannel(channel);
+        }
+    }
+
+    /**
+     * Build a minimal, silent foreground notification.
+     */
+    private Notification buildNotification() {
+        final Intent resultIntent = new Intent(this, MainActivity.class)
+                .setAction(Intent.ACTION_MAIN)
+                .setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+
+        final int pendingFlags = PendingIntent.FLAG_UPDATE_CURRENT
+                | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ? PendingIntent.FLAG_MUTABLE : 0);
+        final PendingIntent pendingIntent =
+                PendingIntent.getActivity(this, 0, resultIntent, pendingFlags);
+
+        return new NotificationCompat.Builder(this, CHANNEL_ID)
+                .setSmallIcon(R.drawable.icon)
+                .setContentTitle("SiYuan")
+                .setContentText("Kernel is running")
+                .setOngoing(true)
+                .setSilent(true)                                    // no sound
+                .setPriority(NotificationCompat.PRIORITY_MIN)       // minimal
+                .setVisibility(NotificationCompat.VISIBILITY_SECRET) // hidden from lock screen
+                .setCategory(Notification.CATEGORY_SERVICE)
+                .setContentIntent(pendingIntent)
+                .build();
+    }
+
+    /**
+     * Acquire a partial WakeLock (CPU stays on) and a WifiLock (Wi-Fi stays on)
+     * so the Go kernel HTTP server remains reachable from other devices.
+     */
+    private void acquireLocks() {
+        try {
+            final PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+            if (pm != null) {
+                wakeLock = pm.newWakeLock(
+                        PowerManager.PARTIAL_WAKE_LOCK,
+                        "siyuan:KernelWakeLock"
+                );
+                wakeLock.acquire();
+            }
+        } catch (final Exception e) {
+            Utils.logError("kernel-service", "acquire wake lock failed", e);
+        }
+
+        try {
+            final WifiManager wm = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+            if (wm != null) {
+                wifiLock = wm.createWifiLock(
+                        WifiManager.WIFI_MODE_FULL_HIGH_PERF,
+                        "siyuan:KernelWifiLock"
+                );
+                wifiLock.acquire();
+            }
+        } catch (final Exception e) {
+            Utils.logError("kernel-service", "acquire wifi lock failed", e);
+        }
+    }
+
+    private void updateMulticastLock() {
+        try {
+            if (Mobile.lanSyncActive()) {
+                if (multicastLock == null) {
+                    final WifiManager wm = (WifiManager) getApplicationContext()
+                            .getSystemService(Context.WIFI_SERVICE);
+                    if (wm != null) {
+                        multicastLock = wm.createMulticastLock("siyuan:KernelMulticastLock");
+                        multicastLock.setReferenceCounted(false);
+                    }
+                }
+                if (multicastLock != null && !multicastLock.isHeld()) {
+                    multicastLock.acquire();
+                }
+            } else if (multicastLock != null && multicastLock.isHeld()) {
+                multicastLock.release();
+                multicastLock = null;
+            }
+        } catch (final Exception e) {
+            Utils.logError("kernel-service", "update multicast lock failed", e);
+        }
+    }
+
+    private void updateLocalIPs() {
+        try {
+            final String currentLocalIPs = Utils.getLANIPAddressList(this);
+            if (currentLocalIPs.equals(localIPs)) {
+                return;
+            }
+            Mobile.updateLocalIPs(currentLocalIPs);
+            localIPs = currentLocalIPs;
+        } catch (final Exception e) {
+            Utils.logError("kernel-service", "refresh local IP addresses failed", e);
+        }
+    }
+
+    private void registerNetworkCallback() {
+        try {
+            connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (connectivityManager == null) {
+                return;
+            }
+            networkCallback = new ConnectivityManager.NetworkCallback() {
+                @Override
+                public void onAvailable(final Network network) {
+                    scheduleLANSyncNetworkRefresh();
+                }
+
+                @Override
+                public void onLinkPropertiesChanged(final Network network, final LinkProperties linkProperties) {
+                    scheduleLANSyncNetworkRefresh();
+                }
+
+                @Override
+                public void onLost(final Network network) {
+                    scheduleLANSyncNetworkRefresh();
+                }
+            };
+            final NetworkRequest request = new NetworkRequest.Builder()
+                    .addTransportType(android.net.NetworkCapabilities.TRANSPORT_WIFI)
+                    .addTransportType(android.net.NetworkCapabilities.TRANSPORT_ETHERNET)
+                    .addTransportType(android.net.NetworkCapabilities.TRANSPORT_CELLULAR)
+                    .build();
+            connectivityManager.registerNetworkCallback(request, networkCallback);
+        } catch (final Exception e) {
+            Utils.logError("kernel-service", "register network callback failed", e);
+        }
+    }
+
+    private void scheduleLANSyncNetworkRefresh() {
+        if (networkCallback == null) {
+            return;
+        }
+        multicastHandler.removeCallbacks(refreshLocalIPs);
+        multicastHandler.postDelayed(refreshLocalIPs, 500);
+    }
+
+    private void unregisterNetworkCallback() {
+        if (connectivityManager == null || networkCallback == null) {
+            return;
+        }
+        try {
+            connectivityManager.unregisterNetworkCallback(networkCallback);
+        } catch (final Exception e) {
+            Utils.logError("kernel-service", "unregister network callback failed", e);
+        }
+        networkCallback = null;
+        connectivityManager = null;
+    }
+
+    /**
+     * Release all held locks.
+     */
+    private void releaseLocks() {
+        try {
+            if (wakeLock != null && wakeLock.isHeld()) {
+                wakeLock.release();
+                wakeLock = null;
+            }
+        } catch (final Exception e) {
+            Utils.logError("kernel-service", "release wake lock failed", e);
+        }
+
+        try {
+            if (multicastLock != null && multicastLock.isHeld()) {
+                multicastLock.release();
+                multicastLock = null;
+            }
+        } catch (final Exception e) {
+            Utils.logError("kernel-service", "release multicast lock failed", e);
+        }
+
+        try {
+            if (wifiLock != null && wifiLock.isHeld()) {
+                wifiLock.release();
+                wifiLock = null;
+            }
+        } catch (final Exception e) {
+            Utils.logError("kernel-service", "release wifi lock failed", e);
+        }
+    }
+}

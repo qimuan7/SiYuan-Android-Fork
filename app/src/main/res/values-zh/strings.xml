@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="shortcut_shorthand">闪念速记</string>
+    <string name="enter_your_text">请输入文本，提交后内容将被保存到 设置 -  文档 - 新建闪念速记的默认存放路径 下</string>
+    <string name="submit">提交</string>
+    <string name="saved">✓</string>
+    <string name="saved_accessibility">已保存</string>
+    <string name="add_to_home">添加到桌面</string>
+    <string name="add_to_home_success">快捷方式添加到桌面成功</string>
+    <string name="add_to_home_failed">快捷方式添加到桌面失败，请确认已经授予相关权限</string>
+    <string name="paste">粘贴</string>
+    <string name="adding_to_home">正在添加快捷方式到桌面，请稍等片刻...</string>
+    <string name="permission_request">权限申请</string>
+    <string name="microphone_permission_rationale">需要麦克风权限才能录制音频并插入当前文档</string>
+    <string name="microphone_permission_denied">麦克风权限已被拒绝</string>
+    <string name="microphone_permission_settings">麦克风权限已被禁用，请在应用设置中启用</string>
+    <string name="open_settings">打开设置</string>
+
+    <string name="welcome_title">思源笔记</string>
+    <string name="welcome_subtitle">自由选择你的工作空间</string>
+    <string name="btn_grant_permission">授予「所有文件访问」权限</string>
+    <string name="btn_new_workspace">新建工作区</string>
+    <string name="btn_open_workspace">打开已有工作区</string>
+    <string name="status_permission_granted">✔ 已获得「所有文件访问」权限</string>
+    <string name="status_permission_denied">⚠ 尚未获得权限，请先点击上方按钮授权</string>
+    <string name="toast_permission_granted">已授权</string>
+    <string name="toast_cannot_parse_path">无法解析路径</string>
+    <string name="toast_cannot_write">无法写入该目录。请先授权「所有文件访问」。</string>
+    <string name="toast_create_dir_failed">创建目录失败: %s</string>
+    <string name="toast_existing_workspace">该目录已有工作区，将直接打开</string>
+    <string name="toast_not_valid_workspace">该目录不是有效的 SiYuan 工作区（缺少 conf/conf.json）</string>
+</resources>
